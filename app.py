@@ -19,7 +19,6 @@ def read_data():
     data = {}
     servers = read_servers(inventory_path)
     for server in servers:
-        # server = server_file.strip()
         data[server] = read_ttls_file(servers_ttls / f'{server}_ttls.log')
     return data
 
@@ -43,7 +42,7 @@ def update_graph(i, fig):
             go.Scatter(
                 x=list(range(1, len(ttls) + 1)),
                 y=ttls,
-                name=f'Задержка до {server}',
+                name=f'Delay to {server}',
                 mode='lines+markers',
                 opacity=0.8,
                 line={'width': 3}
@@ -51,7 +50,7 @@ def update_graph(i, fig):
         )
 
     fig.update_layout(
-        title_text='Задержка до серверов',
+        title_text='Delay to Servers',
         title_font_size=16,
         autosize=True,
         overwrite=True
@@ -70,7 +69,6 @@ def update_table(i, fig):
     total_height = len(list(df["Hosts"])) * 90
     colors = []
     for row in list(df['Status']):
-        print('row is: ', row)
         if 'ERROR' in str(row):
             colors.append('#FF0000')
         elif 'TIMEOUT' in str(row):
@@ -101,15 +99,12 @@ def update_table(i, fig):
 def update_plot(i, value, fig):
     pwd = Path(__file__).parent
     inventory_path = pwd / 'inventory.csv'
-    print('inv path', inventory_path)
     inventory = read_inventory_file(inventory_path)
-    print('inv', inventory)
     hdf = pd.DataFrame(inventory.loc[inventory['Hosts'].isin([value])])
     user = str(hdf['Users'].values[0])
     host = str(hdf['Hosts'].values[0])
     passwd = str(hdf['Passwords'].values[0])
     figure = make_details(host, user, passwd)
-    print('callback value', value)
     return figure
 
 
@@ -130,9 +125,12 @@ if __name__ == '__main__':
                 options=servers,
                 placeholder="Select a server",
                 clearable=False,
-                id='dropdown'
+                id='dropdown',
+                style={
+                        'fonts':'sans-serif'
+                        }
             ),
-            dcc.Graph(id="utilmap", ),
+            dcc.Graph(id="utilmap"),
             dcc.Interval(id="animateInterval2", interval=300, n_intervals=0)
         ]
 
