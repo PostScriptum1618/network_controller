@@ -1,14 +1,11 @@
 import datetime
-import os
-import platform
 import time
 import pandas as pd
-from multiprocessing import Process
 from threading import Thread
 from pathlib import Path
-import subprocess
 import ping3
 
+from files_stuff import read_servers, read_hosts
 
 
 def overfill_check(servers, servers_ttls):
@@ -27,42 +24,34 @@ def make_vars():
     print('Checking ping...')
     pwd = Path(__file__).resolve().parent
     servers_ttls = pwd / 'servers_ttls'
+    inventory_path = pwd / 'inventory.csv'
 
-    with open(pwd / "servers.txt", 'r') as servers_file:
-        servers = [server.strip() for server in servers_file.readlines()]
+    servers = read_servers(inventory_path)
 
-    with open(pwd / "hosts.txt", "r", encoding="utf-8") as hosts_file:
-        hosts = [host.strip() for host in hosts_file.readlines()]
+    hosts = read_hosts(inventory_path)
 
     df = pd.DataFrame({'Hosts': hosts, 'Status': [None] * len(hosts)})
-    param = '-n' if platform.system().lower() == 'windows' else '-c'
 
-    return hosts, servers, servers_ttls, df, param
+    return hosts, servers, servers_ttls, df
 
 
-def check_ping(hosts, servers, servers_ttls, df, param):
+def check_ping(hosts, servers, servers_ttls, df, wait_time=0.2):
     while True:
         for h, host in enumerate(hosts):
-            t1 = time.time()
-
-            response = ping3.ping(host, seq=1)
-            ttl = time.time() - t1
-            # if host in servers:
-            #     with open(servers_ttls / f'{host}_ttls.log', "a+") as ttl_file:
-            #         ttl_file.write(f"{ttl:.4f}\n")
-
-            if (response != None) and (response != False):
-                #print(f"{host}: Host Active")
-                df.at[h, 'Status'] = f'delay is {str(response)}'
+            response = ping3.ping(host, seq=1, timeout=wait_time)
+            if (response is not None) and (response is not False):
+                # print(f"{host}: Host Active")
+                df.at[h, 'Status'] = f'delay is {response}'
+                print(f'delay is {response}')
                 if host in servers:
                     with open(servers_ttls / f'{host}_ttls.log', "a+") as ttl_file:
                         ttl_file.write(f"{response:.4f}\n")
-            elif response == None and (df.at[h, 'Status'] != 'Timeout'):
+            elif (response is None) and ('TIMEOUT' not in str(df.at[h, 'Status'])):
                 df.at[h, 'Status'] = f'TIMEOUT since {datetime.datetime.now()}'
                 if host in servers:
                     with open(servers_ttls / f'{host}_ttls.log', "a+") as ttl_file:
                         ttl_file.write(f"{-1}\n")
-            elif response == False and (df.at[h, 'Status'] != 'Error'):
+            elif (response is False) and ('ERROR' not in str(df.at[h, 'Status'])):
                 df.at[h, 'Status'] = f'ERROR since {datetime.datetime.now()}'
                 if host in servers:
                     with open(servers_ttls / f'{host}_ttls.log', "a+") as ttl_file:
@@ -75,9 +64,9 @@ def check_ping(hosts, servers, servers_ttls, df, param):
 
 
 if __name__ == '__main__':
-    hosts, servers, servers_ttls, df, param = make_vars()
+    hosts, servers, servers_ttls, df = make_vars()
 
-    thread1 = Thread(target=check_ping, args=(hosts, servers, servers_ttls, df, param), daemon=True)
+    thread1 = Thread(target=check_ping, args=(hosts, servers, servers_ttls, df))
     thread1.start()
 
     # Add code for the Dash app...

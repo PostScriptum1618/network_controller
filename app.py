@@ -1,4 +1,3 @@
-import time
 from pathlib import Path
 from dash import html
 from jupyter_dash import JupyterDash
@@ -7,56 +6,25 @@ from dash.dependencies import Input, Output, State
 import plotly.graph_objects as go
 import pandas as pd
 from threading import Thread
-import os
-from shutil import rmtree
+
 import main
+from files_stuff import read_ttls_file, setup_dirs, read_servers, read_inventory_file
+from utils_app import make_details
 
 
-def read_servers_file(file_path):
-    with open(file_path, 'r') as servers_file:
-        return [server.strip() for server in servers_file]
-
-
-def read_ttls_file(file_path):
-    with open(file_path, 'r') as ttl_file:
-        return [float(row.strip()) for row in ttl_file]
-
-def make_ttls_files(servers_path, servers_ttls_path):
-    servers = read_servers_file(servers_path)
-    for server in servers:
-        ttl_file_path = servers_ttls_path / f'{server}_ttls.log'
-        if not ttl_file_path.exists():
-            ttl_file_path.touch()
 def read_data():
     pwd = Path(__file__).parent
     servers_ttls = pwd / 'servers_ttls'
+    inventory_path = pwd / 'inventory.csv'
     data = {}
-    for server_file in (pwd / 'servers.txt').read_text().splitlines():
-        server = server_file.strip()
+    servers = read_servers(inventory_path)
+    for server in servers:
+        # server = server_file.strip()
         data[server] = read_ttls_file(servers_ttls / f'{server}_ttls.log')
     return data
 
 
-def setup_dirs():
-    pwd = Path(__file__).parent
-    hosts_path = pwd / 'hosts.txt'
-    servers_path = pwd / 'servers.txt'
-    servers_ttls_path = pwd / 'servers_ttls'
-
-    if not hosts_path.exists():
-        print("hosts.txt file not found!!!")
-
-    if not servers_path.exists():
-        print('servers.txt not found')
-    elif servers_ttls_path.exists():
-        rmtree(servers_ttls_path)
-
-    os.mkdir(servers_ttls_path)
-    servers = read_servers_file(servers_path)
-    if servers_ttls_path.exists():
-            make_ttls_files(servers_path, servers_ttls_path)
-
-app = JupyterDash(__name__)
+app = JupyterDash(__name__, use_pages=False)
 
 
 @app.callback(
@@ -75,7 +43,7 @@ def update_graph(i, fig):
             go.Scatter(
                 x=list(range(1, len(ttls) + 1)),
                 y=ttls,
-                name=f'TTL до {server}',
+                name=f'Задержка до {server}',
                 mode='lines+markers',
                 opacity=0.8,
                 line={'width': 3}
@@ -83,10 +51,10 @@ def update_graph(i, fig):
         )
 
     fig.update_layout(
-        title_text='TTL до серверов',
+        title_text='Задержка до серверов',
         title_font_size=16,
-        plot_bgcolor='rgba(0,0,0,0.05)',
-        autosize=True
+        autosize=True,
+        overwrite=True
     )
 
     return fig
@@ -98,29 +66,76 @@ def update_graph(i, fig):
     State("heatmap1", "figure")
 )
 def update_table(i, fig):
-    df = pd.read_csv('status.csv', sep='|')
-    total_height = len(df["Hosts"]) * 60
+    df = pd.read_csv('status.csv', sep='|', index_col=0)
+    total_height = len(list(df["Hosts"])) * 90
+    colors = []
+    for row in list(df['Status']):
+        print('row is: ', row)
+        if 'ERROR' in str(row):
+            colors.append('#FF0000')
+        elif 'TIMEOUT' in str(row):
+            colors.append('#FFFF00')
+        elif 'delay' in str(row):
+            colors.append('#109010')
+
     tab = go.Figure(data=go.Table(
-        header=dict(values=['Hosts', 'Status']),
-        cells=dict(values=[df['Hosts'], df['Status']])
+        header=dict(values=['Hosts', 'Status'],
+                    line_color='rgba(0, 0, 0, 0.75)', ),
+        cells=dict(values=list([list(df['Hosts']), list(df['Status'])]),
+                   line_color='rgba(0, 0, 0, 0.75)',
+                   fill_color=[colors]
+                   ),
+
     ))
+
     tab.update_layout(height=total_height)
     return tab
 
 
+@app.callback(
+    Output("utilmap", "figure"),
+    Input("animateInterval2", "n_intervals"),
+    Input('dropdown', 'value'),
+    State("utilmap", "figure")
+)
+def update_plot(i, value, fig):
+    pwd = Path(__file__).parent
+    inventory_path = pwd / 'inventory.csv'
+    print('inv path', inventory_path)
+    inventory = read_inventory_file(inventory_path)
+    print('inv', inventory)
+    hdf = pd.DataFrame(inventory.loc[inventory['Hosts'].isin([value])])
+    user = str(hdf['Users'].values[0])
+    host = str(hdf['Hosts'].values[0])
+    passwd = str(hdf['Passwords'].values[0])
+    figure = make_details(host, user, passwd)
+    print('callback value', value)
+    return figure
+
+
 if __name__ == '__main__':
     setup_dirs()
-    hosts, servers, servers_ttls, df, param = main.make_vars()
-    thread1 = Thread(target=main.check_ping, args=[hosts, servers, servers_ttls, df, param], daemon=True)
+    hosts, servers, servers_ttls, df = main.make_vars()
+    data = read_data()
+    thread1 = Thread(target=main.check_ping, args=[hosts, servers, servers_ttls, df], daemon=True)
     thread2 = Thread(target=app.run_server, kwargs={'mode': 'inline'}, daemon=True)
 
     app.layout = html.Div(
         [
             dcc.Graph(id="heatmap"),
             dcc.Interval(id="animateInterval", interval=300, n_intervals=0),
-            dcc.Graph(id="heatmap1"),
+            dcc.Graph(id="heatmap1", ),
             dcc.Interval(id="animateInterval1", interval=300, n_intervals=0),
+            dcc.Dropdown(
+                options=servers,
+                placeholder="Select a server",
+                clearable=False,
+                id='dropdown'
+            ),
+            dcc.Graph(id="utilmap", ),
+            dcc.Interval(id="animateInterval2", interval=300, n_intervals=0)
         ]
+
     )
 
     thread1.start()
