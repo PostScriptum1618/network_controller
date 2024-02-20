@@ -126,9 +126,6 @@ if __name__ == '__main__':
                 placeholder="Select a server",
                 clearable=False,
                 id='dropdown',
-                style={
-                        'fonts':'sans-serif'
-                        }
             ),
             dcc.Graph(id="utilmap"),
             dcc.Interval(id="animateInterval2", interval=300, n_intervals=0)

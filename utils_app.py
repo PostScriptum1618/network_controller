@@ -3,13 +3,6 @@ import utilizations
 
 
 def make_details(host, user, secret):
-    # hosts = inventory['Hosts']
-    # users = inventory['Users']
-    # passwords = inventory['Passwords']
-    # figures = {}
-    # for h, host in enumerate(inventory['Hosts']):
-    #     user = str(inventory['Users'][h])
-    #     secret = str(inventory['Passwords'][h])
     print('trying to connect', host)
     try:
         cpu, mem = utilizations.get_stat(host, user, secret)
